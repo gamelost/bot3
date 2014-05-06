@@ -12,30 +12,61 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 )
 
 const BOT_CONFIG = "bot3.config"
+const PRIVMSG = "PRIVMSG"
+
+func main() {
+
+	// the quit channel
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
+	// read in necessary configuration
+	config, err := iniconf.ReadConfigFile(BOT_CONFIG)
+	if err != nil {
+		log.Fatal("Unable to read configuration file. Exiting now.")
+	}
+
+	// set up Bot3 instnace
+	bot3 := &Bot3{}
+	bot3.QuitChan = sigChan
+	bot3.init(config)
+	bot3.connect()
+
+	// receiving quit shuts down
+	<-sigChan
+}
 
 // struct type for Bot3
 type Bot3 struct {
 	Config     *iniconf.ConfigFile
 	Connection *irc.Conn
 	// NSQ input/output to bot3Server
-	BotServerOutputReader *nsq.Reader
-	BotServerInputWriter  *nsq.Writer
-	QuitChan              chan os.Signal
+	BotServerOutputReader    *nsq.Reader
+	BotServerInputWriter     *nsq.Writer
+	BotServerHeartbeatReader *nsq.Reader
+	QuitChan                 chan os.Signal
+	Silenced                 bool
+	BotServerOnline          bool
+	LastBotServerHeartbeat   *server.Bot3ServerHeartbeat
+	Bot3ServerHeartbeatChan  chan *server.Bot3ServerHeartbeat
 }
 
 func (b *Bot3) init(config *iniconf.ConfigFile) error {
 
 	b.Config = config
+	b.Silenced = false
 
 	// set up the config struct
 	botNick, _ := b.Config.GetString("default", "nick")
 	botPass, _ := b.Config.GetString("default", "pass")
 	botServer, _ := b.Config.GetString("default", "ircserver")
 	chanToJoin, _ := b.Config.GetString("default", "channel")
-	bot3apiOutput, _ := b.Config.GetString("default", "bot3api-output")
+	bot3serverOutput, _ := b.Config.GetString("default", "bot3server-output")
+	bot3serverInput, _ := b.Config.GetString("default", "bot3server-input")
 
 	log.Printf("Bot nick will be: %s and will join %s\n", botNick, chanToJoin)
 	cfg := irc.NewConfig(botNick)
@@ -47,9 +78,47 @@ func (b *Bot3) init(config *iniconf.ConfigFile) error {
 
 	// assign connection
 	b.Connection = c
+	b.Bot3ServerHeartbeatChan = make(chan *server.Bot3ServerHeartbeat)
+	b.BotServerOnline = true
+
+	// set up listener for heartbeat from bot3server
+	heartbeatReader, err := nsq.NewReader("bot3server-heartbeat", "main#ephemeral")
+	if err != nil {
+		panic(err)
+		b.QuitChan <- syscall.SIGINT
+	}
+	b.BotServerHeartbeatReader = heartbeatReader
+	hbmh := &HeartbeatMessageHandler{Bot3ServerHeartbeatChan: b.Bot3ServerHeartbeatChan}
+	b.BotServerHeartbeatReader.AddHandler(hbmh)
+	b.BotServerHeartbeatReader.ConnectToLookupd("127.0.0.1:4161")
+
+	// set up goroutine to listen for heartbeat
+	go func() {
+		for {
+			select {
+			case hb := <-b.Bot3ServerHeartbeatChan:
+				log.Printf("Received heartbeat-0ed from botserver %s", hb)
+				// if we're coming back online, broadcast message
+				if b.BotServerOnline == false {
+					b.BotServerOnline = true
+					c.Nick(botNick)
+					c.Privmsg(chanToJoin, "Wheee.  Restored connection to bot3server!")
+				}
+				break
+			case <-time.After(time.Second * 5):
+				// if initially going offline, broadcast message
+				if b.BotServerOnline == true {
+					c.Privmsg(chanToJoin, "Welp! I seem to have lost connection to the bot3server.  Will continue to look for it.")
+					c.Nick("son_SERVEROFFLINE")
+					b.BotServerOnline = false
+				}
+				break
+			}
+		}
+	}()
 
 	// set up reader and message handler for botserver-output
-	outputReader, err := nsq.NewReader(bot3apiOutput, "main")
+	outputReader, err := nsq.NewReader(bot3serverOutput, "main")
 	if err != nil {
 		panic(err)
 		b.QuitChan <- syscall.SIGINT
@@ -88,16 +157,37 @@ func (b *Bot3) init(config *iniconf.ConfigFile) error {
 			}
 		})
 
+	// handle !silent
+	c.HandleFunc(PRIVMSG,
+		func(conn *irc.Conn, line *irc.Line) {
+			if strings.HasPrefix("!silent", line.Text()) {
+				if line.Nick == "timzilla" {
+					if !b.Silenced {
+						c.Nick("son_SILENCED")
+						b.Silenced = true
+					} else {
+						c.Nick(botNick)
+						b.Silenced = false
+					}
+				}
+			}
+		})
+
 	// handle privmsgs
-	c.HandleFunc("PRIVMSG",
+	c.HandleFunc(PRIVMSG,
 		func(conn *irc.Conn, line *irc.Line) {
 
 			botRequest := &server.BotRequest{RawLine: line}
 			encodedRequest, _ := json.Marshal(botRequest)
-			// write to nsq
-			_, _, err := b.BotServerInputWriter.Publish("bot3api-input", encodedRequest)
-			if err != nil {
-				panic(err)
+
+			// write to nsq only if not silenced, otherwise drop message
+			if !b.Silenced {
+				_, _, err := b.BotServerInputWriter.Publish(bot3serverInput, encodedRequest)
+				if err != nil {
+					panic(err)
+				}
+			} else {
+				log.Printf("Silenced - will not output message.")
 			}
 		})
 
@@ -114,52 +204,6 @@ func (b *Bot3) connect() {
 		log.Printf("Successfully connected.")
 	}
 
-}
-
-func main() {
-
-	// the quit channel
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-
-	// read in necessary configuration
-	config, err := iniconf.ReadConfigFile(BOT_CONFIG)
-	if err != nil {
-		log.Fatal("Unable to read configuration file. Exiting now.")
-	}
-
-	// set up Bot3 instnace
-	bot3 := &Bot3{}
-	bot3.QuitChan = sigChan
-	bot3.init(config)
-	bot3.connect()
-
-	// receiving quit shuts down
-	<-sigChan
-}
-
-type MessageHandler struct {
-	Connection *irc.Conn
-}
-
-func (mh *MessageHandler) HandleMessage(message *nsq.Message) error {
-
-	resp := &server.BotResponse{}
-	json.Unmarshal(message.Body, resp)
-
-	switch resp.ResponseType {
-	case server.PRIVMSG:
-		processPrivmsgResponse(mh.Connection, resp)
-		break
-	case server.ACTION:
-		processActionResponse(mh.Connection, resp)
-		break
-	default:
-		processPrivmsgResponse(mh.Connection, resp)
-		break
-	}
-
-	return nil
 }
 
 func processPrivmsgResponse(conn *irc.Conn, botResponse *server.BotResponse) {
