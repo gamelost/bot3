@@ -97,7 +97,6 @@ func (b *Bot3) init(config *iniconf.ConfigFile) error {
 		for {
 			select {
 			case hb := <-b.Bot3ServerHeartbeatChan:
-				log.Printf("Received heartbeat-0ed from botserver %s", hb)
 				// if we're coming back online, broadcast message
 				if b.BotServerOnline == false {
 					b.BotServerOnline = true
@@ -148,7 +147,7 @@ func (b *Bot3) init(config *iniconf.ConfigFile) error {
 		})
 
 	// hardcoded kill command just in case
-	c.HandleFunc("PRIVMSG",
+	c.HandleFunc(PRIVMSG,
 		func(conn *irc.Conn, line *irc.Line) {
 			if strings.HasPrefix("!quit", line.Text()) {
 				if line.Nick == "timzilla" {
