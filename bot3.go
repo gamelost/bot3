@@ -96,7 +96,7 @@ func (b *Bot3) init(config *iniconf.ConfigFile) error {
 	go func() {
 		for {
 			select {
-			case hb := <-b.Bot3ServerHeartbeatChan:
+			case <-b.Bot3ServerHeartbeatChan:
 				// if we're coming back online, broadcast message
 				if b.BotServerOnline == false {
 					b.BotServerOnline = true
