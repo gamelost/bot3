@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	nsq "github.com/bitly/go-nsq"
-	irc "github.com/fluffle/goirc/client"
 	"github.com/gamelost/bot3server/server"
+	irc "github.com/gamelost/goirc/client"
 )
 
 type MessageHandler struct {

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	nsq "github.com/bitly/go-nsq"
-	irc "github.com/fluffle/goirc/client"
 	"github.com/gamelost/bot3server/server"
+	irc "github.com/gamelost/goirc/client"
 	"log"
 	"os"
 	"os/signal"
@@ -15,8 +15,13 @@ import (
 	"time"
 )
 
-const BOT_CONFIG = "bot3.config"
-const PRIVMSG = "PRIVMSG"
+const (
+	BOT_CONFIG = "bot3.config"
+	PRIVMSG    = "PRIVMSG"
+	// config categories
+	CONFIG_CAT_DEFAULT = "default"
+	CONFIG_CAT_NSQ     = "nsq"
+)
 
 func main() {
 
@@ -61,12 +66,12 @@ func (b *Bot3) init(config *iniconf.ConfigFile) error {
 	b.Silenced = false
 
 	// set up the config struct
-	botNick, _ := b.Config.GetString("default", "nick")
-	botPass, _ := b.Config.GetString("default", "pass")
-	botServer, _ := b.Config.GetString("default", "ircserver")
-	chanToJoin, _ := b.Config.GetString("default", "channel")
-	bot3serverOutput, _ := b.Config.GetString("default", "bot3server-output")
-	bot3serverInput, _ := b.Config.GetString("default", "bot3server-input")
+	botNick, _ := b.Config.GetString(CONFIG_CAT_DEFAULT, "nick")
+	botPass, _ := b.Config.GetString(CONFIG_CAT_DEFAULT, "pass")
+	botServer, _ := b.Config.GetString(CONFIG_CAT_DEFAULT, "ircserver")
+	chanToJoin, _ := b.Config.GetString(CONFIG_CAT_DEFAULT, "channel")
+	bot3serverOutput, _ := b.Config.GetString(CONFIG_CAT_DEFAULT, "bot3server-output")
+	bot3serverInput, _ := b.Config.GetString(CONFIG_CAT_DEFAULT, "bot3server-input")
 
 	log.Printf("Bot nick will be: %s and will join %s\n", botNick, chanToJoin)
 	cfg := irc.NewConfig(botNick)
