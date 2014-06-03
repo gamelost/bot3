@@ -4,7 +4,7 @@ import (
 	iniconf "code.google.com/p/goconf/conf"
 	"encoding/json"
 	"fmt"
-	nsq "github.com/bitly/go-nsq"
+	nsq "github.com/gamelost/go-nsq"
 	"github.com/gamelost/bot3server/server"
 	irc "github.com/gamelost/goirc/client"
 	"log"
