@@ -149,7 +149,7 @@ func (b *Bot3) init(config *Bot3Config) error {
 	// hardcoded kill command just in case
 	c.HandleFunc(PRIVMSG,
 		func(conn *irc.Conn, line *irc.Line) {
-			if strings.HasPrefix("!quit", line.Text()) {
+			if strings.HasPrefix("!quit "+b.Config.BotNick, line.Text()) {
 				if b.Config.IsAdminNick(line.Nick) {
 					b.QuitChan <- syscall.SIGINT
 				}
