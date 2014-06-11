@@ -13,12 +13,21 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"code.google.com/p/go-uuid/uuid"
 )
 
 const (
 	BOT_CONFIG = "bot3.config"
 	PRIVMSG    = "PRIVMSG"
 )
+
+type Request struct {
+	RawLine *irc.Line
+	Timestamp time.Time
+}
+
+var requests map[string] *Request
+var MagicIdentifier string
 
 func main() {
 
@@ -32,11 +41,15 @@ func main() {
 		log.Fatal("Unable to read configuration file. Exiting now.")
 	}
 
+	requests = map[string] *Request{}
+
 	// convert to bot3config
 	bot3config, err := Bot3ConfigFromConfigFile(configFile)
 	if err != nil {
 		log.Fatal("Incomplete or invalid config file for bot3config. Exiting now.")
 	}
+
+	MagicIdentifier = bot3config.MagicIdentifier
 
 	// set up Bot3 instnace
 	bot3 := &Bot3{}
@@ -175,8 +188,10 @@ func (b *Bot3) init(config *Bot3Config) error {
 	// handle privmsgs
 	c.HandleFunc(PRIVMSG,
 		func(conn *irc.Conn, line *irc.Line) {
-
-			botRequest := &server.BotRequest{RawLine: line}
+			reqid := uuid.NewUUID().String()
+			requests[reqid] = &Request{RawLine: line, Timestamp: time.Now()}
+			botRequest := &server.BotRequest{Identifier: reqid, Nick: line.Nick, Channel: line.Target(), ChatText: line.Text()}
+			log.Printf("Pushing %+v to server\n", botRequest)
 			encodedRequest, _ := json.Marshal(botRequest)
 
 			// write to nsq only if not silenced, otherwise drop message
@@ -189,6 +204,19 @@ func (b *Bot3) init(config *Bot3Config) error {
 				log.Printf("Silenced - will not output message.")
 			}
 		})
+
+	go func() {
+		for {
+			exp := time.Now()
+			<-time.After(time.Second * 5)
+			for k, v := range requests {
+				if v.Timestamp.Unix() < exp.Unix() {
+					log.Printf("Expiring %+v\n", v)
+					delete(requests, k)
+				}
+			}
+		}
+	}()
 
 	return nil
 }
@@ -206,15 +234,29 @@ func (b *Bot3) connect() {
 }
 
 func processPrivmsgResponse(conn *irc.Conn, botResponse *server.BotResponse) {
-
+	log.Printf("botResponse: %+v", botResponse)
 	for _, value := range botResponse.Response {
-		conn.Privmsg(botResponse.Target, value)
+		id := botResponse.Identifier
+		_, ok := requests[id];
+		if ok || id == MagicIdentifier {
+			conn.Privmsg(botResponse.Target, value)
+			delete(requests, id)
+		} else {
+			log.Printf("Can't find an id entry for %+v\n", botResponse)
+		}
 	}
 }
 
 func processActionResponse(conn *irc.Conn, botResponse *server.BotResponse) {
 
 	for _, value := range botResponse.Response {
-		conn.Action(botResponse.Target, value)
+		id := botResponse.Identifier
+		_, ok := requests[id];
+		if ok || id == MagicIdentifier {
+			conn.Action(botResponse.Target, value)
+			delete(requests, id)
+		} else {
+			log.Printf("Can't find an id entry for %+v\n", botResponse)
+		}
 	}
 }

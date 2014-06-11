@@ -1,0 +1,14 @@
+[bot]
+nick=glcbot3
+offlineNickPrefix=b3
+adminNicks=walker,timzilla,cantsin
+pass=foobar
+
+[default]
+channel=#tpsreports
+ircserver=irc.freenode.net
+
+[nsq]
+bot3server-input=bot3server-input
+bot3server-output=bot3server-output
+magic-identifier=shoowopadoowop
