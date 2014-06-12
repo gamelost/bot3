@@ -2,13 +2,16 @@ package main
 
 import (
 	"encoding/json"
-	nsq "github.com/gamelost/go-nsq"
 	"github.com/gamelost/bot3server/server"
+	nsq "github.com/gamelost/go-nsq"
 	irc "github.com/gamelost/goirc/client"
+	"log"
 )
 
 type MessageHandler struct {
-	Connection *irc.Conn
+	Connection      *irc.Conn
+	Requests        map[string]*Request
+	MagicIdentifier string
 }
 
 func (mh *MessageHandler) HandleMessage(message *nsq.Message) error {
@@ -18,17 +21,45 @@ func (mh *MessageHandler) HandleMessage(message *nsq.Message) error {
 
 	switch resp.ResponseType {
 	case server.PRIVMSG:
-		processPrivmsgResponse(mh.Connection, resp)
+		mh.processPrivmsgResponse(resp)
 		break
 	case server.ACTION:
-		processActionResponse(mh.Connection, resp)
+		mh.processActionResponse(resp)
 		break
 	default:
-		processPrivmsgResponse(mh.Connection, resp)
+		mh.processPrivmsgResponse(resp)
 		break
 	}
 
 	return nil
+}
+
+func (mh *MessageHandler) processPrivmsgResponse(botResponse *server.BotResponse) {
+	log.Printf("botResponse: %+v", botResponse)
+	for _, value := range botResponse.Response {
+		id := botResponse.Identifier
+		_, ok := mh.Requests[id]
+		if ok || id == mh.MagicIdentifier {
+			mh.Connection.Privmsg(botResponse.Target, value)
+			delete(mh.Requests, id)
+		} else {
+			log.Printf("Can't find an id entry for %+v\n", botResponse)
+		}
+	}
+}
+
+func (mh *MessageHandler) processActionResponse(botResponse *server.BotResponse) {
+
+	for _, value := range botResponse.Response {
+		id := botResponse.Identifier
+		_, ok := mh.Requests[id]
+		if ok || id == mh.MagicIdentifier {
+			mh.Connection.Action(botResponse.Target, value)
+			delete(mh.Requests, id)
+		} else {
+			log.Printf("Can't find an id entry for %+v\n", botResponse)
+		}
+	}
 }
 
 type HeartbeatMessageHandler struct {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"code.google.com/p/go-uuid/uuid"
 	iniconf "code.google.com/p/goconf/conf"
 	"encoding/json"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"code.google.com/p/go-uuid/uuid"
 )
 
 const (
@@ -22,12 +22,9 @@ const (
 )
 
 type Request struct {
-	RawLine *irc.Line
+	RawLine   *irc.Line
 	Timestamp time.Time
 }
-
-var requests map[string] *Request
-var MagicIdentifier string
 
 func main() {
 
@@ -41,15 +38,11 @@ func main() {
 		log.Fatal("Unable to read configuration file. Exiting now.")
 	}
 
-	requests = map[string] *Request{}
-
 	// convert to bot3config
 	bot3config, err := Bot3ConfigFromConfigFile(configFile)
 	if err != nil {
 		log.Fatal("Incomplete or invalid config file for bot3config. Exiting now.")
 	}
-
-	MagicIdentifier = bot3config.MagicIdentifier
 
 	// set up Bot3 instnace
 	bot3 := &Bot3{}
@@ -69,17 +62,25 @@ type Bot3 struct {
 	BotServerOutputReader    *nsq.Reader
 	BotServerInputWriter     *nsq.Writer
 	BotServerHeartbeatReader *nsq.Reader
-	QuitChan                 chan os.Signal
-	Silenced                 bool
-	BotServerOnline          bool
-	LastBotServerHeartbeat   *server.Bot3ServerHeartbeat
-	Bot3ServerHeartbeatChan  chan *server.Bot3ServerHeartbeat
+	// program quit chan
+	QuitChan chan os.Signal
+	// bot state
+	Silenced                bool
+	BotServerOnline         bool
+	LastBotServerHeartbeat  *server.Bot3ServerHeartbeat
+	Bot3ServerHeartbeatChan chan *server.Bot3ServerHeartbeat
+	MagicIdentifier         string
+	// messagehandlers
+	IRCMessageHandler *MessageHandler
 }
 
 func (b *Bot3) init(config *Bot3Config) error {
 
 	b.Config = config
 	b.Silenced = false
+
+	// set up magicid
+	b.MagicIdentifier = config.MagicIdentifier
 
 	log.Printf("Bot nick will be: %s and will join %s\n", b.Config.BotNick, b.Config.BotChannelToJoin)
 	cfg := irc.NewConfig(b.Config.BotNick)
@@ -136,8 +137,8 @@ func (b *Bot3) init(config *Bot3Config) error {
 		b.QuitChan <- syscall.SIGINT
 	}
 	b.BotServerOutputReader = outputReader
-	mh := &MessageHandler{Connection: c}
-	b.BotServerOutputReader.AddHandler(mh)
+	b.IRCMessageHandler = &MessageHandler{Connection: c, MagicIdentifier: b.Config.MagicIdentifier, Requests: map[string]*Request{}}
+	b.BotServerOutputReader.AddHandler(b.IRCMessageHandler)
 	b.BotServerOutputReader.ConnectToLookupd("127.0.0.1:4161")
 
 	// set up writer for botserver-input
@@ -189,10 +190,13 @@ func (b *Bot3) init(config *Bot3Config) error {
 	c.HandleFunc(PRIVMSG,
 		func(conn *irc.Conn, line *irc.Line) {
 			reqid := uuid.NewUUID().String()
-			requests[reqid] = &Request{RawLine: line, Timestamp: time.Now()}
+			b.IRCMessageHandler.Requests[reqid] = &Request{RawLine: line, Timestamp: time.Now()}
 			botRequest := &server.BotRequest{Identifier: reqid, Nick: line.Nick, Channel: line.Target(), ChatText: line.Text()}
-			log.Printf("Pushing %+v to server\n", botRequest)
-			encodedRequest, _ := json.Marshal(botRequest)
+			encodedRequest, err := json.Marshal(botRequest)
+
+			if err != nil {
+				log.Printf("Error encoding request: %s\n", err.Error())
+			}
 
 			// write to nsq only if not silenced, otherwise drop message
 			if !b.Silenced {
@@ -205,18 +209,19 @@ func (b *Bot3) init(config *Bot3Config) error {
 			}
 		})
 
-	go func() {
-		for {
-			exp := time.Now()
-			<-time.After(time.Second * 5)
-			for k, v := range requests {
-				if v.Timestamp.Unix() < exp.Unix() {
-					log.Printf("Expiring %+v\n", v)
-					delete(requests, k)
-				}
-			}
-		}
-	}()
+	// disabling this for now since it breaks remindme
+	// go func() {
+	// 	for {
+	// 		exp := time.Now()
+	// 		<-time.After(time.Second * 5)
+	// 		for k, v := range b.IRCMessageHandler.Requests {
+	// 			if v.Timestamp.Unix() < exp.Unix() {
+	// 				log.Printf("Expiring %+v\n", v)
+	// 				delete(b.IRCMessageHandler.Requests, k)
+	// 			}
+	// 		}
+	// 	}
+	// }()
 
 	return nil
 }
@@ -231,32 +236,4 @@ func (b *Bot3) connect() {
 		log.Printf("Successfully connected.")
 	}
 
-}
-
-func processPrivmsgResponse(conn *irc.Conn, botResponse *server.BotResponse) {
-	log.Printf("botResponse: %+v", botResponse)
-	for _, value := range botResponse.Response {
-		id := botResponse.Identifier
-		_, ok := requests[id];
-		if ok || id == MagicIdentifier {
-			conn.Privmsg(botResponse.Target, value)
-			delete(requests, id)
-		} else {
-			log.Printf("Can't find an id entry for %+v\n", botResponse)
-		}
-	}
-}
-
-func processActionResponse(conn *irc.Conn, botResponse *server.BotResponse) {
-
-	for _, value := range botResponse.Response {
-		id := botResponse.Identifier
-		_, ok := requests[id];
-		if ok || id == MagicIdentifier {
-			conn.Action(botResponse.Target, value)
-			delete(requests, id)
-		} else {
-			log.Printf("Can't find an id entry for %+v\n", botResponse)
-		}
-	}
 }
