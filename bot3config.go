@@ -31,6 +31,7 @@ type Bot3Config struct {
 	// nsq topics
 	Bot3ServerOutputTopic string
 	Bot3ServerInputTopic  string
+	MagicIdentifier       string
 }
 
 func Bot3ConfigFromConfigFile(configFile *iniconf.ConfigFile) (*Bot3Config, error) {
@@ -56,6 +57,7 @@ func (bc *Bot3Config) readInRequiredProperties() error {
 	bc.BotChannelToJoin, _ = bc.Config.GetString(CONFIG_CAT_DEFAULT, "channel")
 	bc.Bot3ServerOutputTopic, _ = bc.Config.GetString(CONFIG_CAT_NSQ, "bot3server-output")
 	bc.Bot3ServerInputTopic, _ = bc.Config.GetString(CONFIG_CAT_NSQ, "bot3server-input")
+	bc.MagicIdentifier, _ = bc.Config.GetString(CONFIG_CAT_NSQ, "magic-identifier")
 	bc.BotOfflinePrefix, _ = bc.Config.GetString(CONFIG_CAT_BOT, "offlineNickPrefix")
 
 	csv, _ := bc.Config.GetString(CONFIG_CAT_BOT, "adminNicks")
