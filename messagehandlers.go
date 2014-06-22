@@ -41,7 +41,7 @@ func (mh *MessageHandler) processPrivmsgResponse(botResponse *server.BotResponse
 		_, ok := mh.Requests[id]
 		if ok || id == mh.MagicIdentifier {
 			mh.Connection.Privmsg(botResponse.Target, value)
-			delete(mh.Requests, id)
+			//delete(mh.Requests, id)
 		} else {
 			log.Printf("Can't find an id entry for %+v\n", botResponse)
 		}
@@ -55,7 +55,7 @@ func (mh *MessageHandler) processActionResponse(botResponse *server.BotResponse)
 		_, ok := mh.Requests[id]
 		if ok || id == mh.MagicIdentifier {
 			mh.Connection.Action(botResponse.Target, value)
-			delete(mh.Requests, id)
+			//delete(mh.Requests, id)
 		} else {
 			log.Printf("Can't find an id entry for %+v\n", botResponse)
 		}
