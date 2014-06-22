@@ -5,7 +5,7 @@ package handlers
 
 import (
 	"encoding/json"
-	nsq "github.com/gamelost/go-nsq"
+	nsq "github.com/bitly/go-nsq"
 	"github.com/gamelost/bot3server/server"
 	irc "github.com/gamelost/goirc/client"
 )

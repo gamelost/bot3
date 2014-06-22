@@ -5,8 +5,8 @@ import (
 	iniconf "code.google.com/p/goconf/conf"
 	"encoding/json"
 	"fmt"
+	nsq "github.com/bitly/go-nsq"
 	"github.com/gamelost/bot3server/server"
-	nsq "github.com/gamelost/go-nsq"
 	irc "github.com/gamelost/goirc/client"
 	"log"
 	"os"
@@ -59,9 +59,9 @@ type Bot3 struct {
 	Config     *Bot3Config
 	Connection *irc.Conn
 	// NSQ input/output to bot3Server
-	BotServerOutputReader    *nsq.Reader
-	BotServerInputWriter     *nsq.Writer
-	BotServerHeartbeatReader *nsq.Reader
+	BotServerOutputReader    *nsq.Consumer
+	BotServerInputWriter     *nsq.Producer
+	BotServerHeartbeatReader *nsq.Consumer
 	// program quit chan
 	QuitChan chan os.Signal
 	// bot state
@@ -96,15 +96,15 @@ func (b *Bot3) init(config *Bot3Config) error {
 	b.BotServerOnline = true
 
 	// set up listener for heartbeat from bot3server
-	heartbeatReader, err := nsq.NewReader("bot3server-heartbeat", "main#ephemeral")
+	heartbeatReader, err := nsq.NewConsumer("bot3server-heartbeat", "main#ephemeral", nsq.NewConfig())
 	if err != nil {
 		panic(err)
 		b.QuitChan <- syscall.SIGINT
 	}
 	b.BotServerHeartbeatReader = heartbeatReader
 	hbmh := &HeartbeatMessageHandler{Bot3ServerHeartbeatChan: b.Bot3ServerHeartbeatChan}
-	b.BotServerHeartbeatReader.AddHandler(hbmh)
-	b.BotServerHeartbeatReader.ConnectToLookupd("127.0.0.1:4161")
+	b.BotServerHeartbeatReader.SetHandler(hbmh)
+	b.BotServerHeartbeatReader.ConnectToNSQLookupd("127.0.0.1:4161")
 
 	// set up goroutine to listen for heartbeat
 	go func() {
@@ -131,18 +131,23 @@ func (b *Bot3) init(config *Bot3Config) error {
 	}()
 
 	// set up reader and message handler for botserver-output
-	outputReader, err := nsq.NewReader(b.Config.Bot3ServerOutputTopic, "main")
+	outputReader, err := nsq.NewConsumer(b.Config.Bot3ServerOutputTopic, "main", nsq.NewConfig())
 	if err != nil {
 		panic(err)
 		b.QuitChan <- syscall.SIGINT
 	}
 	b.BotServerOutputReader = outputReader
 	b.IRCMessageHandler = &MessageHandler{Connection: c, MagicIdentifier: b.Config.MagicIdentifier, Requests: map[string]*Request{}}
-	b.BotServerOutputReader.AddHandler(b.IRCMessageHandler)
-	b.BotServerOutputReader.ConnectToLookupd("127.0.0.1:4161")
+	b.BotServerOutputReader.SetHandler(b.IRCMessageHandler)
+	b.BotServerOutputReader.ConnectToNSQLookupd("127.0.0.1:4161")
 
 	// set up writer for botserver-input
-	writer := nsq.NewWriter("127.0.0.1:4150")
+	writer, err := nsq.NewProducer("127.0.0.1:4150", nsq.NewConfig())
+	if err != nil {
+		panic(err)
+		b.QuitChan <- syscall.SIGINT
+	}
+
 	b.BotServerInputWriter = writer
 
 	// Add handlers to do things here!
@@ -200,7 +205,7 @@ func (b *Bot3) init(config *Bot3Config) error {
 
 			// write to nsq only if not silenced, otherwise drop message
 			if !b.Silenced {
-				_, _, err := b.BotServerInputWriter.Publish(b.Config.Bot3ServerInputTopic, encodedRequest)
+				err := b.BotServerInputWriter.Publish(b.Config.Bot3ServerInputTopic, encodedRequest)
 				if err != nil {
 					panic(err)
 				}

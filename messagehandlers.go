@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	nsq "github.com/bitly/go-nsq"
 	"github.com/gamelost/bot3server/server"
-	nsq "github.com/gamelost/go-nsq"
 	irc "github.com/gamelost/goirc/client"
 	"log"
 )
