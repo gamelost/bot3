@@ -96,14 +96,14 @@ func (b *Bot3) init(config *Bot3Config) error {
 	b.BotServerOnline = true
 
 	// set up listener for heartbeat from bot3server
-	heartbeatReader, err := nsq.NewConsumer("bot3server-heartbeat", "main#ephemeral", nsq.NewConfig())
+	heartbeatReader, err := nsq.NewConsumer("bot3server-heartbeat", "main", nsq.NewConfig())
 	if err != nil {
 		panic(err)
 		b.QuitChan <- syscall.SIGINT
 	}
 	b.BotServerHeartbeatReader = heartbeatReader
 	hbmh := &HeartbeatMessageHandler{Bot3ServerHeartbeatChan: b.Bot3ServerHeartbeatChan}
-	b.BotServerHeartbeatReader.SetHandler(hbmh)
+	b.BotServerHeartbeatReader.AddHandler(hbmh)
 	b.BotServerHeartbeatReader.ConnectToNSQLookupd("127.0.0.1:4161")
 
 	// set up goroutine to listen for heartbeat
@@ -138,7 +138,7 @@ func (b *Bot3) init(config *Bot3Config) error {
 	}
 	b.BotServerOutputReader = outputReader
 	b.IRCMessageHandler = &MessageHandler{Connection: c, MagicIdentifier: b.Config.MagicIdentifier, Requests: map[string]*Request{}}
-	b.BotServerOutputReader.SetHandler(b.IRCMessageHandler)
+	b.BotServerOutputReader.AddHandler(b.IRCMessageHandler)
 	b.BotServerOutputReader.ConnectToNSQLookupd("127.0.0.1:4161")
 
 	// set up writer for botserver-input
