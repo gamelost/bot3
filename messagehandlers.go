@@ -5,7 +5,7 @@ import (
 	nsq "github.com/bitly/go-nsq"
 	"github.com/gamelost/bot3server/server"
 	irc "github.com/gamelost/goirc/client"
-	"log"
+	// "log"
 )
 
 type MessageHandler struct {
@@ -35,30 +35,28 @@ func (mh *MessageHandler) HandleMessage(message *nsq.Message) error {
 }
 
 func (mh *MessageHandler) processPrivmsgResponse(botResponse *server.BotResponse) {
-	log.Printf("botResponse: %+v", botResponse)
 	for _, value := range botResponse.Response {
-		id := botResponse.Identifier
-		_, ok := mh.Requests[id]
-		if ok || id == mh.MagicIdentifier {
-			mh.Connection.Privmsg(botResponse.Target, value)
-			//delete(mh.Requests, id)
-		} else {
-			log.Printf("Can't find an id entry for %+v\n", botResponse)
-		}
+		// id := botResponse.Identifier
+		// _, ok := mh.Requests[id]
+		// if ok || id == mh.MagicIdentifier {
+		mh.Connection.Privmsg(botResponse.Target, value)
+		//delete(mh.Requests, id)
+		// } else {
+		// log.Printf("Can't find an id entry for %+v\n", botResponse)
+		// }
 	}
 }
 
 func (mh *MessageHandler) processActionResponse(botResponse *server.BotResponse) {
-
 	for _, value := range botResponse.Response {
-		id := botResponse.Identifier
-		_, ok := mh.Requests[id]
-		if ok || id == mh.MagicIdentifier {
-			mh.Connection.Action(botResponse.Target, value)
-			//delete(mh.Requests, id)
-		} else {
-			log.Printf("Can't find an id entry for %+v\n", botResponse)
-		}
+		// id := botResponse.Identifier
+		// _, ok := mh.Requests[id]
+		// if ok || id == mh.MagicIdentifier {
+		mh.Connection.Action(botResponse.Target, value)
+		//delete(mh.Requests, id)
+		// } else {
+		// log.Printf("Can't find an id entry for %+v\n", botResponse)
+		// }
 	}
 }
 

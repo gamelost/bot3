@@ -168,7 +168,8 @@ func (b *Bot3) init(config *Bot3Config) error {
 	// hardcoded kill command just in case
 	c.HandleFunc(PRIVMSG,
 		func(conn *irc.Conn, line *irc.Line) {
-			if strings.HasPrefix("!quit "+b.Config.BotNick, line.Text()) {
+			if strings.HasPrefix(line.Text(), "!quit") {
+				log.Printf("Received !quit command.")
 				if b.Config.IsAdminNick(line.Nick) {
 					b.QuitChan <- syscall.SIGINT
 				}
@@ -178,8 +179,9 @@ func (b *Bot3) init(config *Bot3Config) error {
 	// handle !silent
 	c.HandleFunc(PRIVMSG,
 		func(conn *irc.Conn, line *irc.Line) {
-			if strings.HasPrefix("!silent", line.Text()) {
+			if strings.HasPrefix(line.Text(), "!silent") {
 				if b.Config.IsAdminNick(line.Nick) {
+					log.Printf("Received !silent command.\n")
 					if !b.Silenced {
 						c.Nick(b.Config.BotOfflinePrefix + "_SILENCED")
 						b.Silenced = true
@@ -195,7 +197,7 @@ func (b *Bot3) init(config *Bot3Config) error {
 	c.HandleFunc(PRIVMSG,
 		func(conn *irc.Conn, line *irc.Line) {
 			reqid := uuid.NewUUID().String()
-			b.IRCMessageHandler.Requests[reqid] = &Request{RawLine: line, Timestamp: time.Now()}
+			//b.IRCMessageHandler.Requests[reqid] = &Request{RawLine: line, Timestamp: time.Now()}
 			botRequest := &server.BotRequest{Identifier: reqid, Nick: line.Nick, Channel: line.Target(), ChatText: line.Text()}
 			encodedRequest, err := json.Marshal(botRequest)
 
@@ -207,6 +209,7 @@ func (b *Bot3) init(config *Bot3Config) error {
 			if !b.Silenced {
 				err := b.BotServerInputWriter.Publish(b.Config.Bot3ServerInputTopic, encodedRequest)
 				if err != nil {
+					log.Printf("%v\n", err)
 					panic(err)
 				}
 			} else {
